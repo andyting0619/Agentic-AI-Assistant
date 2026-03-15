@@ -2,7 +2,7 @@
 - A web-based agentic AI assistant utilizing React, FastAPI, PostgreSQL with pgvector, and Hugging Face API to deliver precise RAG capabilities over PDF documents.
 # Requirements
 - Python (v3.8 or higher)
-- Groq API Key
+- Hugging Face API Key
 - PostgreSQL with the `pgvector` extension enabled
 - Node.js (v18 or higher)
 ## Key Feature
@@ -11,7 +11,7 @@
 2. **Long-Term Memory (Rolling Summary):** To prevent exceeding the model's context window during extended sessions, older dialogue that falls out of the sliding window is not simply discarded. Instead, a background process generates and continuously updates a concise "rolling summary" of past interactions. This ensures the AI retains the overarching topic, previous findings, and user preferences indefinitely.
 # System Architecture and Workflow
 
-
+![workflow](Workflow.png)
 
 # How to Use
 1. Clone the project to your local machine and navigate into the directory.
