@@ -98,7 +98,7 @@ DEFAULT_TEXT_MODEL = "openai/gpt-oss-120b"
 CURATED_TEXT_MODELS = [
     "openai/gpt-oss-120b",
     "Qwen/Qwen3-235B-A22B-Instruct-2507",
-    "meta-llama/Llama-3.3-70B-Instruct",
+    "deepseek-ai/DeepSeek-V3.2",
 ]
 
 
@@ -112,7 +112,7 @@ def apply_provider_policy(model_name: str) -> str:
 TEXT_MODEL_CANDIDATES = [
     apply_provider_policy(model.strip()) for model in os.getenv(
         "HF_TEXT_MODELS",
-        f"{DEFAULT_TEXT_MODEL},Qwen/Qwen3-235B-A22B-Instruct-2507,meta-llama/Llama-3.3-70B-Instruct"
+        f"{DEFAULT_TEXT_MODEL},Qwen/Qwen3-235B-A22B-Instruct-2507,deepseek-ai/DeepSeek-V3.2"
     ).split(",") if model.strip()
 ]
 
