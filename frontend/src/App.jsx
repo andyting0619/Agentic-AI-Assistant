@@ -5,13 +5,13 @@ import { Send, Upload, Cpu, User, Terminal, Zap, MessageSquare, Sliders, Trash2,
 const CURATED_TEXT_MODELS = [
   'openai/gpt-oss-120b',
   'Qwen/Qwen3-235B-A22B-Instruct-2507',
-  'deepseek-ai/DeepSeek-V3.2'
+  'meta-llama/Llama-3.1-8B-Instruct'
 ];
 
 const MODEL_LABELS = {
   'openai/gpt-oss-120b': 'GPT-OSS 120B',
   'Qwen/Qwen3-235B-A22B-Instruct-2507': 'Qwen-3 235B',
-  'deepseek-ai/DeepSeek-V3.2': 'DeepSeek V3.2'
+  'meta-llama/Llama-3.1-8B-Instruct': 'LLaMa-3.1 8B'
 };
 
 export default function App() {
