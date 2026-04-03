@@ -1,5 +1,3 @@
-# Delete PDF and its embeddings
-
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse
 import io
@@ -9,6 +7,7 @@ from urllib import parse as urlparse
 from urllib import error as urlerror
 from urllib import request as urlrequest
 import re
+import socket
 import time
 import json
 import os
@@ -119,16 +118,20 @@ TEXT_MODEL_CANDIDATES = [
 
 TEXT_TIMEOUT_SECONDS = int(os.getenv("TEXT_TIMEOUT_SECONDS", "60"))
 EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "64"))
-EMBEDDING_TIMEOUT_SECONDS = int(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "60"))
+EMBEDDING_TIMEOUT_SECONDS = int(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "180"))
 EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
 RETRIEVAL_TOP_K = int(os.getenv("RETRIEVAL_TOP_K", "8"))
 RETRIEVAL_PER_FILE_K = int(os.getenv("RETRIEVAL_PER_FILE_K", "2"))
 EMBEDDING_MODEL = os.getenv(
     "HF_EMBEDDING_MODEL",
-    "Qwen/Qwen3-Embedding-8B"
+    "intfloat/multilingual-e5-large"
 ).strip()
-DEFAULT_EMBEDDING_MODELS = "intfloat/multilingual-e5-large-instruct"
-EMBEDDING_MODEL_CANDIDATES = ["intfloat/multilingual-e5-large-instruct"]
+DEFAULT_EMBEDDING_MODELS = f"{EMBEDDING_MODEL},thenlper/gte-large"
+EMBEDDING_MODEL_CANDIDATES = [
+    model.strip()
+    for model in os.getenv("HF_EMBEDDING_MODELS", DEFAULT_EMBEDDING_MODELS).split(",")
+    if model.strip()
+]
 
 
 def ensure_pdf_files_table(cur):
@@ -144,6 +147,7 @@ def ensure_pdf_files_table(cur):
 
 
 _EMBEDDING_BACKEND_LOGGED = set()
+_UNAVAILABLE_EMBEDDING_MODELS = set()
 
 
 def _log_embedding_backend_once(model_name: str, endpoint_label: str, target_dimensions: int):
@@ -181,6 +185,30 @@ def _compact_error_message(message: str, max_len: int = 220) -> str:
     if len(compact) <= max_len:
         return compact
     return compact[: max_len - 3] + "..."
+
+
+def _is_timeout_error(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+
+    if isinstance(exc, urlerror.URLError) and isinstance(exc.reason, (TimeoutError, socket.timeout)):
+        return True
+
+    text = str(exc).lower()
+    if "timed out" in text or "timeout" in text:
+        return True
+
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return True
+    if reason and reason is not exc and _is_timeout_error(reason):
+        return True
+
+    cause = getattr(exc, "__cause__", None)
+    if cause and cause is not exc and _is_timeout_error(cause):
+        return True
+
+    return False
 
 
 def _extract_error_message(body_text: str, status_code: int) -> str:
@@ -419,6 +447,13 @@ def create_embedding_with_fallback(text_batch: List[str], timeout_seconds: int =
             if variant not in expanded_candidates:
                 expanded_candidates.append(variant)
 
+    available_candidates = [
+        model_name for model_name in expanded_candidates
+        if model_name not in _UNAVAILABLE_EMBEDDING_MODELS
+    ]
+    if available_candidates:
+        expanded_candidates = available_candidates
+
     last_error = None
     for idx, model_name in enumerate(expanded_candidates):
         try:
@@ -427,6 +462,7 @@ def create_embedding_with_fallback(text_batch: List[str], timeout_seconds: int =
             last_error = e
             compact_error = _compact_error_message(str(e))
             if _is_retryable_model_error(e):
+                _UNAVAILABLE_EMBEDDING_MODELS.add(model_name)
                 next_model = expanded_candidates[idx + 1] if idx + \
                     1 < len(expanded_candidates) else None
                 if next_model:
@@ -439,9 +475,33 @@ def create_embedding_with_fallback(text_batch: List[str], timeout_seconds: int =
     raise RuntimeError(
         "No working embedding models from candidates: "
         f"{expanded_candidates}. Last error: {last_error}. "
-        "Tip: Qwen/Qwen3-Embedding-4B is often not deployed on Router providers; "
-        "prefer Qwen/Qwen3-Embedding-8B or Qwen/Qwen3-Embedding-0.6B in HF_EMBEDDING_MODELS."
+        "Tip: prefer documented HF Inference feature-extraction models such as "
+        "intfloat/multilingual-e5-large or thenlper/gte-large in HF_EMBEDDING_MODELS."
     )
+
+
+def embed_text_batch_with_backoff(text_batch: List[str], timeout_seconds: int = EMBEDDING_TIMEOUT_SECONDS, target_dimensions: int = EMBEDDING_DIMENSIONS) -> List[List[float]]:
+    try:
+        return create_embedding_with_fallback(text_batch, timeout_seconds, target_dimensions)
+    except Exception as exc:
+        if not _is_timeout_error(exc) or len(text_batch) <= 1:
+            raise
+
+        split_point = max(1, len(text_batch) // 2)
+        print(
+            f"⚠️ Embedding batch of {len(text_batch)} texts timed out after {timeout_seconds}s; retrying as {split_point} + {len(text_batch) - split_point}."
+        )
+        left_vectors = embed_text_batch_with_backoff(
+            text_batch[:split_point],
+            timeout_seconds,
+            target_dimensions,
+        )
+        right_vectors = embed_text_batch_with_backoff(
+            text_batch[split_point:],
+            timeout_seconds,
+            target_dimensions,
+        )
+        return left_vectors + right_vectors
 
 
 async def embed_texts_async(texts: List[str], batch_size: int = EMBED_BATCH_SIZE, target_dimensions: int = EMBEDDING_DIMENSIONS) -> List[List[float]]:
@@ -452,7 +512,7 @@ async def embed_texts_async(texts: List[str], batch_size: int = EMBED_BATCH_SIZE
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
         batch_vectors = await asyncio.to_thread(
-            create_embedding_with_fallback,
+            embed_text_batch_with_backoff,
             batch,
             EMBEDDING_TIMEOUT_SECONDS,
             target_dimensions,
@@ -807,6 +867,8 @@ def admin_dashboard():
 
 @app.post("/upload")
 async def upload_pdfs(files: List[UploadFile] = File(...)):
+    conn = None
+    cur = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -882,12 +944,25 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
             )
 
         conn.commit()
-        cur.close()
-        conn.close()
         return {"filenames": filenames, "chunks_saved": saved_count, "status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"ERROR: {e}")
+        if _is_timeout_error(e):
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    "Embedding request timed out while processing the PDF. "
+                    "The server retried with smaller batches, but the provider still did not respond in time."
+                ),
+            )
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if cur is not None:
+            cur.close()
+        if conn is not None:
+            conn.close()
 # Endpoint to fetch PDF file list
 
 # Provide both /pdf-list and /list-pdfs endpoints for compatibility
@@ -966,7 +1041,7 @@ async def chat(request: ChatRequest):
         new_summary = request.current_summary
         if request.summarize_these:
             summarize_prompt = f"""
-            You are maintaining ARA's long-term memory for a PDF research chat.
+            You are maintaining PDF document assistant's long-term memory for a PDF research chat.
             Update the memory using the new dialogue.
 
             Keep only durable information that helps future answers:
@@ -1043,7 +1118,7 @@ async def chat(request: ChatRequest):
             context_blocks) if context_blocks else "No PDF chunks retrieved."
 
         system_prompt = f"""
-        You are ARA (Advanced Research Agent).
+        You are PDF document assistant.
 
         Your task is to answer using retrieved PDF text chunks first, and conversation memory second.
 
