@@ -16,7 +16,7 @@ const MODEL_LABELS = {
 
 export default function App() {
   const [messages, setMessages] = useState([
-    { role: 'bot', text: 'System Online. Advanced Research Agent is ready. Please upload document(s) to begin analysis.' }
+    { role: 'bot', text: 'System Online. PDF document AI assistant is ready. Please upload your PDF document(s) to begin analysis.' }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -120,7 +120,11 @@ export default function App() {
       const fileCountText = files.length === 1 ? '1 file' : `${files.length} files`;
       setMessages(prev => [...prev, { role: 'bot', text: `>> Ingestion Complete: Processed ${fileCountText}.` }]);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'bot', text: ">> Error: Connection failed. Please check the backend." }]);
+      const detail =
+        error?.response?.data?.detail ||
+        error?.message ||
+        'Upload failed while processing the PDF.';
+      setMessages(prev => [...prev, { role: 'bot', text: `>> Upload Error: ${detail}` }]);
     }
     setUploading(false);
   };
@@ -179,10 +183,10 @@ export default function App() {
           <div>
             <div className="flex items-center gap-3 text-indigo-400 mb-2">
               <Cpu className="w-6 h-6" />
-              <span className="font-mono text-sm tracking-widest uppercase text-indigo-300">AGENTIC AI SYSTEM</span>
+              <span className="font-mono text-sm tracking-widest uppercase text-indigo-300">Document Intelligence System</span>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight whitespace-nowrap">
-              Advanced Research Agent
+              PDF Document AI Assistant
             </h1>
           </div>
         </div>
@@ -317,7 +321,7 @@ export default function App() {
               `}>
                 {msg.role === 'bot' && (
                   <div className="flex items-center gap-2 mb-3 text-indigo-400 text-xs font-bold tracking-widest uppercase">
-                    <Terminal size={14} /> Agent Response
+                    <Terminal size={14} /> AI Assistant Response
                   </div>
                 )}
                 <div className="whitespace-pre-wrap font-medium">{msg.text}</div>
