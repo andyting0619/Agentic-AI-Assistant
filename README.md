@@ -1,9 +1,9 @@
-# Agentic AI Assistant
-- A web-based agentic AI assistant utilizing React, FastAPI, PostgreSQL with pgvector, and Hugging Face API to deliver precise RAG capabilities over PDF documents.
+# PDF Document AI Assistant
+- A web-based PDF document AI assistant utilizing React, FastAPI, PostgreSQL with pgvector, and Hugging Face API to deliver precise RAG capabilities over PDF documents.
 # Requirements
 - Python (v3.8 or higher)
 - Hugging Face API Key
-- PostgreSQL with the `pgvector` extension enabled
+- PostgreSQL with the `pgvector` extension enabled (Docker)
 - Node.js (v18 or higher)
 ## Key Feature
 - A natural, context-aware conversational experience while significantly optimizing API token usage, this assistant implements a sophisticated hybrid memory architecture:
@@ -17,11 +17,11 @@
 1. Clone the project to your local machine and navigate into the directory.
 
 ```bash
-git clone https://github.com/andyting0619/Agentic-AI-Assistant
-cd Agentic-AI-Assistant
+git clone https://github.com/andyting0619/PDF-Document-AI-Assistant
+cd PDF-Document-AI-Assistant
 ```
 
-2. Set up the Database. Make sure PostgreSQL is running. Create a new database and enable the `pgvector` extension, which is required for the RAG capabilities.
+2. Set up the Database. Make sure Docker is running. Create a new database and enable the `pgvector` extension, which is required for the RAG capabilities.
 
 ```sql
 CREATE DATABASE "rag-pdf-chatbot-db";
